@@ -75,9 +75,9 @@ lexer_result lexer::tokenize(const std::string & source) {
                 }
                 // add escaped char
                 char escaped_char = src[pos++];
-                if (escape_chars.find(escaped_char) == escape_chars.end()) {
-                    throw lexer_exception(std::string("unknown escape character \\") + escaped_char, source, pos);
-                }
+                //if (escape_chars.find(escaped_char) == escape_chars.end()) {
+                //    throw lexer_exception(std::string("unknown escape character \\") + escaped_char, source, pos);
+                //}
                 char unescaped_char = escape_chars.at(escaped_char);
                 str += unescaped_char;
                 continue;
@@ -249,9 +249,9 @@ lexer_result lexer::tokenize(const std::string & source) {
         if (!is_closing_block && (ch == '-' || ch == '+')) {
             start_pos = pos;
             token::type last_token_type = tokens.empty() ? token::eof : tokens.back().t;
-            if (last_token_type == token::text || last_token_type == token::eof) {
-                throw lexer_exception(std::string("unexpected character: ") + ch, source, pos);
-            }
+            //if (last_token_type == token::text || last_token_type == token::eof) {
+            //    throw lexer_exception(std::string("unexpected character: ") + ch, source, pos);
+            //}
             switch (last_token_type) {
                 case token::identifier:
                 case token::numeric_literal:
@@ -332,7 +332,8 @@ lexer_result lexer::tokenize(const std::string & source) {
             continue;
         }
 
-        throw lexer_exception(std::string("unexpected character: ") + ch, source, pos);
+        //throw lexer_exception(std::string("unexpected character: ") + ch, source, pos);
+        continue;
     }
 
     return {std::move(tokens), src};

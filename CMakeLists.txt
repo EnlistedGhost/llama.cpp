@@ -2,6 +2,26 @@ cmake_minimum_required(VERSION 3.14...3.28) # for add_link_options and implicit 
 project("llama.cpp" C CXX)
 include(CheckIncludeFileCXX)
 
+### llama.cpp version
+set(LLAMA_VERSION_MAJOR 0)
+set(LLAMA_VERSION_MINOR 1)
+set(LLAMA_VERSION_PATCH 0)
+set(LLAMA_VERSION_BASE "${LLAMA_VERSION_MAJOR}.${LLAMA_VERSION_MINOR}.${LLAMA_VERSION_PATCH}")
+
+# whether this is a development/nightly build
+# set this to OFF when making a release from a release tag (vX.Y.Z)
+# ref: https://github.com/ggml-org/ggml/discussions/1579
+option(LLAMA_BUILD_IS_DEV "llama: dev build" ON)
+
+if (LLAMA_BUILD_IS_DEV)
+    set(LLAMA_VERSION "${LLAMA_VERSION_BASE}-dev")
+else()
+    # TODO: check that the current commit is tagged correctly according to the version specified above
+    set(LLAMA_VERSION "${LLAMA_VERSION_BASE}")
+endif()
+
+message(STATUS "llama.cpp version: ${LLAMA_VERSION}")
+
 #set(CMAKE_WARN_DEPRECATED YES)
 set(CMAKE_WARN_UNUSED_CLI YES)
 
@@ -24,11 +44,8 @@ if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     set(LLAMA_STANDALONE ON)
 
     include(git-vars)
-
-    # configure project version
-    # TODO
 else()
-    set(LLAMA_STANDALONE OFF)
+    set(LLAMA_STANDALONE ON)
 endif()
 
 option(LLAMA_USE_SYSTEM_GGML "Use system libggml" OFF)
@@ -36,7 +53,7 @@ option(LLAMA_USE_SYSTEM_GGML "Use system libggml" OFF)
 option(LLAMA_WASM_MEM64 "llama: use 64-bit memory in WASM builds" ON)
 
 if (EMSCRIPTEN)
-    set(BUILD_SHARED_LIBS_DEFAULT OFF)
+    set(BUILD_SHARED_LIBS_DEFAULT ON)
 
     # Use 64-bit memory to support backend_get_memory queries
     # TODO: analyze performance impact, see https://spidermonkey.dev/blog/2025/01/15/is-memory64-actually-worth-using
@@ -47,7 +64,7 @@ if (EMSCRIPTEN)
     add_link_options("-sALLOW_MEMORY_GROWTH=1")
 
     option(LLAMA_WASM_SINGLE_FILE "llama: embed WASM inside the generated llama.js" OFF)
-    option(LLAMA_BUILD_HTML "llama: build HTML file" ON)
+    option(LLAMA_BUILD_HTML "llama: build HTML file" OFF)
     if (LLAMA_BUILD_HTML)
         set(CMAKE_EXECUTABLE_SUFFIX ".html")
     endif()
@@ -59,7 +76,7 @@ else()
     endif()
 endif()
 
-option(BUILD_SHARED_LIBS "build shared libraries" ${BUILD_SHARED_LIBS_DEFAULT})
+option(BUILD_SHARED_LIBS "build shared libraries" ON)
 
 if (WIN32)
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
@@ -81,7 +98,15 @@ endif()
 if (CMAKE_SYSTEM_NAME STREQUAL "iOS")
     set(LLAMA_TOOLS_INSTALL_DEFAULT OFF)
 else()
-    set(LLAMA_TOOLS_INSTALL_DEFAULT ${LLAMA_STANDALONE})
+    set(LLAMA_TOOLS_INSTALL_DEFAULT OFF)
+endif()
+
+# subprocess spawning isn't a supported/sandbox-friendly operation on mobile OSes or in WASM
+if (CMAKE_SYSTEM_NAME STREQUAL "iOS" OR CMAKE_SYSTEM_NAME STREQUAL "Android" OR ANDROID
+        OR CMAKE_SYSTEM_NAME STREQUAL "Emscripten" OR EMSCRIPTEN)
+    set(LLAMA_SUBPROCESS_DEFAULT OFF)
+else()
+    set(LLAMA_SUBPROCESS_DEFAULT ON)
 endif()
 
 #
@@ -101,18 +126,23 @@ option(LLAMA_SANITIZE_ADDRESS   "llama: enable address sanitizer"   OFF)
 option(LLAMA_SANITIZE_UNDEFINED "llama: enable undefined sanitizer" OFF)
 
 # utils
-option(LLAMA_BUILD_COMMON "llama: build common utils library" ${LLAMA_STANDALONE})
+option(LLAMA_BUILD_COMMON "llama: build common utils library" ON)
 
 # extra artifacts
-option(LLAMA_BUILD_TESTS    "llama: build tests"          ${LLAMA_STANDALONE})
-option(LLAMA_BUILD_TOOLS    "llama: build tools"          ${LLAMA_STANDALONE})
-option(LLAMA_BUILD_EXAMPLES "llama: build examples"       ${LLAMA_STANDALONE})
-option(LLAMA_BUILD_SERVER   "llama: build server example" ${LLAMA_STANDALONE})
-option(LLAMA_TOOLS_INSTALL  "llama: install tools"        ${LLAMA_TOOLS_INSTALL_DEFAULT})
-option(LLAMA_TESTS_INSTALL  "llama: install tests"        ON)
+option(LLAMA_BUILD_TESTS     "llama: build tests"           OFF)
+option(LLAMA_BUILD_TOOLS     "llama: build tools"           ON)
+option(LLAMA_BUILD_EXAMPLES  "llama: build examples"        OFF)
+option(LLAMA_BUILD_SERVER    "llama: build server example"  ON)
+option(LLAMA_BUILD_APP       "llama: build the UI"          OFF)
+option(LLAMA_BUILD_UI        "llama: build the Web UI"      OFF)
+option(LLAMA_USE_PREBUILT_UI "llama: use prebuilt UI"       OFF)
+
+option(LLAMA_TOOLS_INSTALL "llama: install tools" OFF)
+option(LLAMA_TESTS_INSTALL "llama: install tests" OFF)
 
 # 3rd party libs
-option(LLAMA_OPENSSL    "llama: use openssl to support HTTPS" ON)
+option(LLAMA_OPENSSL    "llama: use openssl to support HTTPS" OFF)
+option(LLAMA_SUBPROCESS "llama-common: use subprocess, required by server tools and server router mode" ${LLAMA_SUBPROCESS_DEFAULT})
 option(LLAMA_LLGUIDANCE "llama-common: include LLGuidance library for structured output in common utils" OFF)
 
 
@@ -121,12 +151,11 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/build-info.cmake)
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/common.cmake)
 
 if (NOT DEFINED LLAMA_BUILD_NUMBER)
-    set(LLAMA_BUILD_NUMBER        ${BUILD_NUMBER})
+    set(LLAMA_BUILD_NUMBER        "10444")
 endif()
 if (NOT DEFINED LLAMA_BUILD_COMMIT)
     set(LLAMA_BUILD_COMMIT        ${BUILD_COMMIT})
 endif()
-set(LLAMA_INSTALL_VERSION 0.0.${LLAMA_BUILD_NUMBER})
 
 # override ggml options
 set(GGML_ALL_WARNINGS   ${LLAMA_ALL_WARNINGS})
@@ -195,36 +224,18 @@ add_subdirectory(src)
 # utils, programs, examples and tests
 #
 
-if (LLAMA_BUILD_COMMON)
     add_subdirectory(common)
     add_subdirectory(vendor/cpp-httplib)
-endif()
-
-if (LLAMA_BUILD_COMMON AND LLAMA_BUILD_TESTS AND NOT CMAKE_JS_VERSION)
-    include(CTest)
-    add_subdirectory(tests)
-endif()
-
-if (LLAMA_BUILD_COMMON AND LLAMA_BUILD_EXAMPLES)
-    add_subdirectory(examples)
-    add_subdirectory(pocs)
-endif()
-
-if (LLAMA_BUILD_COMMON AND LLAMA_BUILD_TOOLS)
     add_subdirectory(tools)
-endif()
 
-# Automatically add all files from the 'licenses' directory
-file(GLOB EXTRA_LICENSES "${CMAKE_SOURCE_DIR}/licenses/LICENSE-*")
-
-foreach(FILE_PATH ${EXTRA_LICENSES})
-    get_filename_component(FILE_NAME "${FILE_PATH}" NAME)
-    string(REGEX REPLACE "^LICENSE-" "" NAME "${FILE_NAME}")
-    license_add_file("${NAME}" "${FILE_PATH}")
-endforeach()
-
-if (LLAMA_BUILD_COMMON)
-    license_generate(common)
+# Standalone libmtmd build without pulling in the rest of the tools/ tree.
+# Useful when packaging just the mtmd library for language bindings (e.g. an
+# Apple XCFramework, or a WASM build). When the full tools build is enabled,
+# mtmd is already built by the tools/ subdirectory above; this hook only fires
+# when LLAMA_BUILD_TOOLS is OFF to avoid double-adding the target.
+option(LLAMA_BUILD_MTMD "llama: build tools/mtmd library standalone" OFF)
+if (LLAMA_BUILD_MTMD AND NOT (LLAMA_BUILD_COMMON AND LLAMA_BUILD_TOOLS))
+    add_subdirectory(tools/mtmd)
 endif()
 
 #
@@ -248,6 +259,10 @@ set_target_properties(llama
 
 install(TARGETS llama LIBRARY PUBLIC_HEADER)
 
+if (LLAMA_BUILD_COMMON)
+    install(TARGETS llama-common LIBRARY)
+endif()
+
 configure_package_config_file(
         ${CMAKE_CURRENT_SOURCE_DIR}/cmake/llama-config.cmake.in
         ${CMAKE_CURRENT_BINARY_DIR}/llama-config.cmake
@@ -257,25 +272,13 @@ configure_package_config_file(
               LLAMA_BIN_INSTALL_DIR )
 
 write_basic_package_version_file(
-        ${CMAKE_CURRENT_BINARY_DIR}/llama-version.cmake
-    VERSION ${LLAMA_INSTALL_VERSION}
+        ${CMAKE_CURRENT_BINARY_DIR}/llama-config-version.cmake
+        VERSION ${LLAMA_VERSION}
     COMPATIBILITY SameMajorVersion)
 
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/llama-config.cmake
-              ${CMAKE_CURRENT_BINARY_DIR}/llama-version.cmake
+              ${CMAKE_CURRENT_BINARY_DIR}/llama-config-version.cmake
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/llama)
-
-install(
-    FILES convert_hf_to_gguf.py
-    PERMISSIONS
-        OWNER_READ
-        OWNER_WRITE
-        OWNER_EXECUTE
-        GROUP_READ
-        GROUP_EXECUTE
-        WORLD_READ
-        WORLD_EXECUTE
-    DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 configure_file(cmake/llama.pc.in
         "${CMAKE_CURRENT_BINARY_DIR}/llama.pc"
