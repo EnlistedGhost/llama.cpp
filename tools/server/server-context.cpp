@@ -357,7 +357,7 @@ struct server_slot {
             }
         }
 
-        SLT_TRC(*this, "\n\n- Llama.cpp-Server | Initial Sampler -\n- Elapsed Time: %0.2f Seconds \n- Tokens: \n\t- Text = %d\n Total = %d\n",
+        SLT_TRC(*this, "\n\n- Llama.cpp-Server | Initial Sampler -\n- Elapsed Time: %0.2f Seconds \n- Tokens: \n- Text = %d\n- Total = %d\n",
                 (ggml_time_us() - t_start) / 1000.0, n_text, (int) prompt.tokens.size());
     }
 
@@ -535,7 +535,7 @@ struct server_slot {
         const double n_gen_second = stats.n_gen_tps();
 
         SLT_INF(*this,
-                "- Prompt Evaluation -\nElapsed Time = %10.2f s\nTokens = %5d\nTime per/token = %8.2f ms\nTokens per/second = %8.2f\n",
+                "\n- Prompt Evaluation -\nElapsed Time = %10.2f s\nTokens = %5d\nTime per/token = %8.2f ms\nTokens per/second = %8.2f\n",
                 t_prompt_total, (int) stats.n_prompt_processed, t_prompt, n_prompt_second);
 
         SLT_INF(*this,
