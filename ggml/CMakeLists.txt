@@ -102,16 +102,16 @@ else()
     set(GGML_BLAS_VENDOR_DEFAULT "Generic")
 endif()
 
-if (CMAKE_CROSSCOMPILING OR DEFINED ENV{SOURCE_DATE_EPOCH})
-    message(STATUS "Setting GGML_NATIVE_DEFAULT to OFF")
-    set(GGML_NATIVE_DEFAULT OFF)
-else()
+#if (CMAKE_CROSSCOMPILING OR DEFINED ENV{SOURCE_DATE_EPOCH})
+#    message(STATUS "Setting GGML_NATIVE_DEFAULT to OFF")
+#    set(GGML_NATIVE_DEFAULT OFF)
+#else()
     set(GGML_NATIVE_DEFAULT ON)
-endif()
+#endif()
 
 # defaults
 if (NOT GGML_LLAMAFILE_DEFAULT)
-    set(GGML_LLAMAFILE_DEFAULT ON)
+    set(GGML_LLAMAFILE_DEFAULT OFF)
 endif()
 
 if (NOT GGML_CUDA_GRAPHS_DEFAULT)
@@ -143,6 +143,8 @@ if (GGML_NATIVE OR NOT GGML_NATIVE_DEFAULT)
 else()
     set(INS_ENB ON)
 endif()
+
+set(CMAKE_BINARY_DIR "/home/sera/Builds/llama.cpp-b10444-RR/build/bin")
 
 message(DEBUG "GGML_NATIVE         : ON")
 message(DEBUG "GGML_NATIVE_DEFAULT : ON")
@@ -187,7 +189,7 @@ set(GGML_CPU_POWERPC_CPUTYPE "" CACHE STRING "ggml: CPU type for PowerPC")
 # ggml core
 set(GGML_SCHED_MAX_COPIES  "2" CACHE STRING "ggml: max input copies for pipeline parallelism")
 option(GGML_CPU                             "ggml: enable CPU backend"                        ON)
-option(GGML_SCHED_NO_REALLOC                "ggml: disallow reallocations in ggml-alloc (for debugging)" OFF)
+option(GGML_SCHED_NO_REALLOC                "ggml: disallow reallocations in ggml-alloc"      OFF)
 
 # 3rd party libs / backends
 option(GGML_ACCELERATE                      "ggml: enable Accelerate framework"               ON)
@@ -213,7 +215,7 @@ set   (GGML_CUDA_COMPRESSION_MODE "size" CACHE STRING
 set_property(CACHE GGML_CUDA_COMPRESSION_MODE PROPERTY STRINGS "none;speed;balance;size")
 
 option(GGML_HIP                             "ggml: use HIP"                                   OFF)
-option(GGML_HIP_GRAPHS                      "ggml: use HIP graph"                              OFF)
+option(GGML_HIP_GRAPHS                      "ggml: use HIP graph"                             OFF)
 option(GGML_HIP_RCCL                        "ggml: use ROCm Collective Comm. Library"         OFF)
 option(GGML_HIP_NO_VMM                      "ggml: do not try to use HIP VMM"                 ON)
 option(GGML_HIP_MMQ_MFMA                    "ggml: enable MFMA MMA for CDNA in MMQ"           OFF)
@@ -247,8 +249,8 @@ option(GGML_RPC                             "ggml: use RPC"                     
 option(GGML_SYCL                            "ggml: use SYCL"                                  OFF)
 option(GGML_SYCL_F16                        "ggml: use 16 bit floats for sycl calculations"   OFF)
 option(GGML_SYCL_GRAPH                      "ggml: enable graphs in the SYCL backend"         OFF)
-option(GGML_SYCL_HOST_MEM_FALLBACK          "ggml: allow host memory fallback in SYCL reorder (requires kernel 6.8+)" ON)
-option(GGML_SYCL_SUPPORT_LEVEL_ZERO_API     "ggml: use Level Zero API in SYCL backend"  OFF)
+option(GGML_SYCL_HOST_MEM_FALLBACK          "ggml: fallback in SYCL reorder (kernel 6.8+)"    ON)
+option(GGML_SYCL_SUPPORT_LEVEL_ZERO_API     "ggml: use Level Zero API in SYCL backend"        OFF)
 option(GGML_SYCL_DNN                        "ggml: enable oneDNN in the SYCL backend"         OFF)
 set   (GGML_SYCL_TARGET "INTEL" CACHE STRING
                                             "ggml: sycl target device")
@@ -334,14 +336,14 @@ set_target_properties(ggml PROPERTIES PUBLIC_HEADER "${GGML_PUBLIC_HEADERS}")
 install(TARGETS ggml LIBRARY PUBLIC_HEADER)
 install(TARGETS ggml-base LIBRARY)
 
-#if (GGML_STANDALONE)
-#    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/ggml.pc.in
-#        ${CMAKE_CURRENT_BINARY_DIR}/ggml.pc
-#        @ONLY)
+# set(CMAKE_BINARY_DIR "/home/sera/Builds/llama.cpp-b10444-RR/build/bin")
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/ggml.pc.in
+    ${CMAKE_BINARY_DIR}/ggml.pc
+    @ONLY)
 #
-#    install(FILES ${CMAKE_CURRENT_BINARY_DIR}/ggml.pc
-#        DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
-#endif()
+install(FILES ${CMAKE_BINARY_DIR}/ggml.pc
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
+
 
 #
 # Create CMake package
@@ -382,14 +384,14 @@ set(GGML_BIN_INSTALL_DIR     ${CMAKE_INSTALL_BINDIR}     CACHE PATH "Location of
 
 configure_package_config_file(
         ${CMAKE_CURRENT_SOURCE_DIR}/cmake/ggml-config.cmake.in
-        ${CMAKE_CURRENT_BINARY_DIR}/ggml-config.cmake
+        ${CMAKE_BINARY_DIR}/ggml-config.cmake
     INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/ggml
     PATH_VARS GGML_INCLUDE_INSTALL_DIR
               GGML_LIB_INSTALL_DIR
               GGML_BIN_INSTALL_DIR)
 
 write_basic_package_version_file(
-        ${CMAKE_CURRENT_BINARY_DIR}/ggml-config-version.cmake
+        ${CMAKE_BINARY_DIR}/ggml-config-version.cmake
     VERSION ${GGML_INSTALL_VERSION}
     COMPATIBILITY SameMajorVersion)
 
@@ -400,8 +402,8 @@ target_compile_definitions(ggml-base PRIVATE
 message(STATUS "ggml version: ${GGML_INSTALL_VERSION}")
 message(STATUS "ggml commit:  ${GGML_BUILD_COMMIT}")
 
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/ggml-config.cmake
-              ${CMAKE_CURRENT_BINARY_DIR}/ggml-config-version.cmake
+install(FILES ${CMAKE_BINARY_DIR}/ggml-config.cmake
+              ${CMAKE_BINARY_DIR}/ggml-config-version.cmake
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/ggml)
 
 if (MSVC)
