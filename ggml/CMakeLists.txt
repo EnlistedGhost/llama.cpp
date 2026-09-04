@@ -144,7 +144,7 @@ else()
     set(INS_ENB ON)
 endif()
 
-set(CMAKE_BINARY_DIR "/home/sera/Builds/llama.cpp-b10444-RR/build/bin")
+set(CMAKE_BINARY_DIR ${CMAKE_CURRENT_SOURCE_DIR}/build)
 
 message(DEBUG "GGML_NATIVE         : ON")
 message(DEBUG "GGML_NATIVE_DEFAULT : ON")
@@ -336,7 +336,6 @@ set_target_properties(ggml PROPERTIES PUBLIC_HEADER "${GGML_PUBLIC_HEADERS}")
 install(TARGETS ggml LIBRARY PUBLIC_HEADER)
 install(TARGETS ggml-base LIBRARY)
 
-# set(CMAKE_BINARY_DIR "/home/sera/Builds/llama.cpp-b10444-RR/build/bin")
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/ggml.pc.in
     ${CMAKE_BINARY_DIR}/ggml.pc
     @ONLY)
