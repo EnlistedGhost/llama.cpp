@@ -14,11 +14,11 @@ cmake -B build \
   -DCMAKE_CXX_COMPILER=g++-13 \
   -DCMAKE_CUDA_HOST_COMPILER=/usr/bin/g++-13 \
   -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12/bin/nvcc \
-  -DCMAKE_CUDA_ARCHITECTURES="50;61;70;75;86;89" \
+  -DCMAKE_CUDA_ARCHITECTURES="70;" \
   -DCMAKE_BUILD_TYPE=Release
 
 #Compile targeted llama-server binary
-cmake --build build --config Release --target llama-server ggml ggml-base ggml-cuda llama-gguf-split llama-quantize llama-tts mtmd -j 20
+cmake --build build --config Release --target llama-server ggml ggml-base ggml-cuda llama-gguf-split llama-quantize llama-tts mtmd -j 16
 
 #  -DNCCL_ROOT="/home/sera/Builds/llama.cpp-b10444-RR/NCCL/build" \
 #  -DNCCL_LIBRARY="/home/sera/Builds/llama.cpp-b10444-RR/NCCL/build/lib/libnccl_static.a" \

@@ -443,19 +443,13 @@ struct server_slot {
             SLT_INF(*this, "Stop processing results:\n- n_tokens = %d\n- truncated = %d\n", prompt.n_tokens(), truncated);
 
             t_last_used = ggml_time_us();
-
             state = SLOT_STATE_IDLE;
 
-            // do not keep context of the child slots - the parent's context is enough
-            if (task->is_child()) {
-                prompt_clear();
-            }
-
-            callback_on_reset(*this);
+            // Wipe context for EVERY slot so each turn starts completely fresh
+            // mem.seq_rm(id, -1, -1) + clears prompt.tokens
+            prompt_clear();
 
             reset();
-
-            callback_on_release(id);
         }
     }
 
@@ -2502,20 +2496,6 @@ private:
 
         if (batch.slot_batched) {
             auto & slot_batched      = batch.slot_batched;
-            auto & alora_scale       = batch.alora_scale;
-            auto & alora_disabled_id = batch.alora_disabled_id;
-
-            // TODO @ngxson : alora handling is too messy, need to refactor it to be more clear and maintainable
-            // apply lora, only need to do it once per batch
-            common_set_adapter_lora(ctx_tgt, slot_batched->lora);
-
-            // if the lora is temporarily disabled for an alora, re-enable it
-            // for next time
-            if (alora_scale > 0.0f) {
-                SRV_DBG("re-enabling alora with scale %f\n", alora_scale);
-                slot_batched->lora[alora_disabled_id].scale = alora_scale;
-            }
-
             llama_set_embeddings(ctx_tgt, slot_batched->need_embd());
         }
 
@@ -2526,8 +2506,6 @@ private:
             const int32_t n_tokens = std::min(n_batch, batch.size() - off);
             try {
                 scoped_timer t(t_decode, n_decode);
-                // TODO @ngxson : maybe handle n_batch == 1 here instead of inside decode()
-
                 batch_view = batch.get_view(off, n_tokens);
                 bool ok = decode(n_batch, off, batch_view);
 #ifdef DEBUG_TIMINGS
@@ -2648,19 +2626,6 @@ private:
 
                         SLT_TRC(slot, "new prompt, n_ctx_slot = %d, n_keep = %d, task.n_tokens = %d\n",
                                 slot.n_ctx, slot.task->params.n_keep, slot.task->n_tokens());
-
-                        // print prompt tokens (for debugging)
-                        /*if (1) {
-                            // first 16 tokens (avoid flooding logs)
-                            for (int i = 0; i < std::min<int>(16, input_tokens.size()); i++) {
-                                SLT_DBG(slot, "prompt token %3d: %6d '%s'\n", i, input_tokens[i], common_token_to_piece(ctx_tgt, input_tokens[i]).c_str());
-                            }
-                        } else {
-                            // all
-                            for (int i = 0; i < (int) input_tokens.size(); i++) {
-                                SLT_DBG(slot, "prompt token %3d: %6d '%s'\n", i, input_tokens[i], common_token_to_piece(ctx_tgt, input_tokens[i]).c_str());
-                            }
-                        }*/
 
                         // keep track how many tokens we can reuse from the previous state
                         int n_past = 0;

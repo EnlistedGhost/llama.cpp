@@ -111,7 +111,7 @@ endif()
 
 # defaults
 if (NOT GGML_LLAMAFILE_DEFAULT)
-    set(GGML_LLAMAFILE_DEFAULT OFF)
+    set(GGML_LLAMAFILE_DEFAULT ON)
 endif()
 
 if (NOT GGML_CUDA_GRAPHS_DEFAULT)
@@ -201,15 +201,15 @@ option(GGML_LLAMAFILE                       "ggml: use LLAMAFILE"               
 option(GGML_CUDA                            "ggml: use CUDA"                                  ON)
 option(GGML_MUSA                            "ggml: use MUSA"                                  OFF)
 option(GGML_CUDA_FORCE_MMQ                  "ggml: use mmq kernels instead of cuBLAS"         OFF)
-option(GGML_CUDA_FORCE_CUBLAS               "ggml: always use cuBLAS instead of mmq kernels"  OFF)
+option(GGML_CUDA_FORCE_CUBLAS               "ggml: always use cuBLAS instead of mmq kernels"  ON)
 set   (GGML_CUDA_PEER_MAX_BATCH_SIZE "128" CACHE STRING
                                             "ggml: max. batch size for using peer access")
 option(GGML_CUDA_NO_PEER_COPY               "ggml: do not use peer to peer copies"            OFF)
-option(GGML_CUDA_NO_VMM                     "ggml: do not try to use CUDA VMM"                OFF)
+option(GGML_CUDA_NO_VMM                     "ggml: do not try to use CUDA VMM"                ON)
 option(GGML_CUDA_FA                         "ggml: compile ggml FlashAttention CUDA kernels"  ON)
-option(GGML_CUDA_FA_ALL_QUANTS              "ggml: compile all quants for FlashAttention"     ON)
+option(GGML_CUDA_FA_ALL_QUANTS              "ggml: compile all quants for FlashAttention"     OFF)
 option(GGML_CUDA_GRAPHS                     "ggml: use CUDA graphs (llama.cpp only)"          ON)
-option(GGML_CUDA_NCCL                       "ggml: use NVIDIA Collective Comm. Library"       ON)
+option(GGML_CUDA_NCCL                       "ggml: use NVIDIA Collective Comm. Library"       OFF)
 set   (GGML_CUDA_COMPRESSION_MODE "size" CACHE STRING
                                             "ggml: cuda link binary compression mode; requires cuda 12.8+")
 set_property(CACHE GGML_CUDA_COMPRESSION_MODE PROPERTY STRINGS "none;speed;balance;size")
