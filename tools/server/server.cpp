@@ -303,9 +303,6 @@ int llama_server(common_params & params, int argc, char ** argv) {
     ctx_http.post("/v1/streams/lookup",        ex_wrapper(streams_lookup_h));
     ctx_http.del ("/v1/stream",                ex_wrapper(stream_delete_h));
 
-    // Google Cloud Platform (Vertex AI) compat
-    ctx_http.register_gcp_compat();
-
     // return 403 for disabled features
     server_http_context::handler_t res_403 = [](const server_http_req &) {
         auto res = std::make_unique<server_http_res>();

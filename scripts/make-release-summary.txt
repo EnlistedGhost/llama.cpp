@@ -27,10 +27,6 @@ Write a summary of the change log in a few sections:
 
 [summarize the changes to `/tools/server/`]
 
-### UI changes (if applicable)
-
-[summarize the changes to `/tools/ui/`]
-
 ### ggml changes (if applicable)
 
 [if the version has been updated, link to the respective `ggml` releases on Github, f.ex `https://github.com/ggml-org/ggml/releases/tag/v0.22.0`. for each version bump, lookup the release description and copy the summary here]

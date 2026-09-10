@@ -164,41 +164,7 @@ struct server_lru_sched {
     // caller must hold models.mutex; never blocks, so it is safe from any thread
     void tick(std::unique_lock<std::mutex> & lk) {
         check_lock(lk);
-        if (models.base_params.models_max <= 0 || queue.empty()) {
-            return;
-        }
-        int n_running  = 0;
-        int n_stopping = 0;
-        for (const auto & m : models.mapping) {
-            if (m.second.meta.is_running()) {
-                n_running++;
-                if (models.stopping_models.count(m.first)) {
-                    n_stopping++;
-                }
-            }
-        }
-        int n_needed  = 0;
-        int n_claimed = 0; // claimed the slot, but load() has not spawned yet
-        for (const auto & e : queue) {
-            if (!e.loading) {
-                n_needed++;
-                continue;
-            }
-            auto it = models.mapping.find(e.model_id);
-            if (it != models.mapping.end() && !it->second.meta.is_running()) {
-                n_claimed++;
-            }
-        }
-        int n_free = models.base_params.models_max - n_running + n_stopping - n_claimed;
-        while (n_free < n_needed) {
-            std::string victim = pick_victim(lk);
-            if (victim.empty()) {
-                return; // all remaining models are busy, wait for a request to end
-            }
-            SRV_INF("evicting idle LRU name=%s for a queued request\n", victim.c_str());
-            models.request_stop(victim);
-            n_free++;
-        }
+        return;
     }
 
   private:

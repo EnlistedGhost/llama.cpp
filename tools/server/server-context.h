@@ -188,6 +188,4 @@ private:
     server_metrics cached_metrics;
     // set when a scrape during sleep already reported the throughput buckets
     bool           should_reset_buckets = false;
-    // call right before sleep to update the cached responses
-    void update_cached_responses(bool is_sleeping);
 };

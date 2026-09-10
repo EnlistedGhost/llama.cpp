@@ -2,7 +2,6 @@
 #include "http.h"
 #include "server-http.h"
 #include "server-common.h"
-#include "ui.h"
 
 #include <cpp-httplib/httplib.h>
 
@@ -57,50 +56,10 @@ static bool origin_is_localhost(const std::string & origin) {
     }
 }
 
-// For Google Cloud Platform deployment compatibility
-struct gcp_params {
-    bool enabled;
-    std::string path_health;
-    std::string path_predict;
-    int port;
-
-    // Ref: https://docs.cloud.google.com/vertex-ai/docs/predictions/custom-container-requirements#aip-variables
-    gcp_params() {
-        enabled = getenv("AIP_MODE", "") == "PREDICTION";
-        path_health = getenv("AIP_HEALTH_ROUTE", "", true); // default: using the route defined in server.cpp
-        path_predict = getenv("AIP_PREDICT_ROUTE", "/predict", true);
-        port = std::stoi(getenv("AIP_HTTP_PORT", "8080"));
-    }
-
-    static std::string getenv(const char * name, const std::string & default_value, bool ensure_leading_slash = false) {
-        const auto * value = std::getenv(name);
-        if (value == nullptr || value[0] == '\0') {
-            return default_value;
-        }
-        std::string val = value;
-        if (ensure_leading_slash && !val.empty() && val[0] != '/') {
-            val.insert(val.begin(), '/');
-        }
-        return val;
-    }
-};
-
 bool server_http_context::init(const common_params & params) {
-    const gcp_params gcp;
-
     path_prefix = params.api_prefix;
     port = params.port;
     hostname = params.hostname;
-
-    if (gcp.enabled) {
-        SRV_TRC("Google Cloud Platform compat: health route = %s, predict route = %s, port = %d\n", gcp.path_health.c_str(), gcp.path_predict.c_str(), gcp.port);
-
-        if (port != gcp.port) {
-            SRV_WRN("Google Cloud Platform compat: overriding server port %d with AIP_HTTP_PORT %d\n", port, gcp.port);
-        }
-
-        port = gcp.port;
-    }
 
     auto & srv = pimpl->srv;
 
@@ -124,10 +83,8 @@ bool server_http_context::init(const common_params & params) {
 #endif
 
     srv->set_default_headers({{"Server", "llama.cpp"}});
-    // srv->set_logger(log_server_request); // TODO @ngxson : this is too spamy, no very useful; improve it in the future
     srv->set_exception_handler([](const httplib::Request &, httplib::Response & res, const std::exception_ptr & ep) {
         // this is fail-safe; exceptions should already handled by `ex_wrapper`
-
         std::string message;
         try {
             std::rethrow_exception(ep);
@@ -184,22 +141,12 @@ bool server_http_context::init(const common_params & params) {
     // Middlewares
     //
 
-    // Frontend paths - all embedded UI assets
-    static const std::unordered_set<std::string> frontend_paths = []() {
-        std::unordered_set<std::string> paths { "/" };
-        for (const llama_ui_asset & a : llama_ui_get_assets()) {
-            paths.insert("/" + a.name);
-        }
-        return paths;
-    }();
-
-    // Public endpoints - API routes plus all embedded UI assets
+    // Public endpoints - API routes
     static const std::unordered_set<std::string> get_public_endpoints = []() {
         std::unordered_set<std::string> endpoints {
             "/health",
             "/v1/health",
         };
-        endpoints.insert(frontend_paths.begin(), frontend_paths.end());
         return endpoints;
     }();
 
@@ -209,7 +156,7 @@ bool server_http_context::init(const common_params & params) {
             return true;
         }
 
-        // If path is public or a UI asset, skip validation
+        // If path is public, skip validation
         if (get_public_endpoints.count(req.path)) {
             return true;
         }
@@ -252,9 +199,6 @@ bool server_http_context::init(const common_params & params) {
 
     auto middleware_server_state = [this](const httplib::Request & req, httplib::Response & res) {
         if (!is_ready.load()) {
-            if (frontend_paths.count(req.path)) {
-                return true; // frontend asset, allow it to load and show "loading"
-            }
             // no endpoints are allowed to be accessed when the server is not ready
             // this is to prevent any data races or inconsistent states
             res.status = 503;
@@ -311,7 +255,7 @@ bool server_http_context::init(const common_params & params) {
         // +4 threads for monitoring, health and some threads reserved for MCP and other tasks in the future
         n_threads_http = std::max(params.n_parallel + 4, static_cast<int32_t>(std::thread::hardware_concurrency() - 1));
     }
-    SRV_TRC("using %d threads for HTTP server\n", n_threads_http);
+    SRV_TRC("using %d threads for HTTP server\n", 12);
     srv->new_task_queue = [n_threads_http] {
         // spawn n_threads_http fixed thread (always alive), while allow up to 1024 max possible additional threads
         // when n_threads_http is used, server will create new "dynamic" threads that will be destroyed after processing each request
@@ -320,112 +264,10 @@ bool server_http_context::init(const common_params & params) {
         return new httplib::ThreadPool(n_threads_http, max_threads);
     };
 
-    //
-    // Web UI setup
-    //
-
-    // Use new `params.ui` field (backed by old `params.webui` for compat)
-    if (!params.ui) {
-        SRV_INF("%s", "The UI is disabled\n");
-        SRV_INF("%s", "Use --ui/--no-ui (or deprecated --webui/--no-webui) to enable/disable\n");
-    } else {
-        // register static assets routes
-        if (!params.public_path.empty()) {
-            // Set the base directory for serving static files
-            if (const auto is_found = srv->set_mount_point(params.api_prefix + "/", params.public_path); !is_found) {
-                SRV_ERR("static assets path not found: %s\n", params.public_path.c_str());
-                return false;
-            }
-        } else {
-#if defined(LLAMA_UI_HAS_ASSETS)
-            static auto handle_gzip_header = [](const httplib::Request & req, httplib::Response & res) {
-                if (!llama_ui_use_gzip()) {
-                    // no gzip build, skip
-                    return true;
-                }
-                if (req.get_header_value("Accept-Encoding").find("gzip") == std::string::npos) {
-                    res.status = 415; // unsupported media type
-                    res.set_content("Error: gzip is not supported by this browser", "text/plain");
-                    return false;
-                } else {
-                    res.set_header("Content-Encoding", "gzip");
-                }
-                return true;
-            };
-
-            // Hashed assets never change under a given name, so they can be cached forever.
-            // `index.html` is the exception: its name is stable while its contents change on
-            // every build, and it is what names the hashed asset versions the UI loads.
-            static constexpr auto cache_immutable  = "public, max-age=31536000, immutable";
-            static constexpr auto cache_revalidate = "no-cache";
-
-            // Serves an asset with ETag/304 handling, under the given caching policy.
-            auto serve_asset_cached = [](const std::string & name, bool isolation, const char * cache_control) {
-                return [name, isolation, cache_control](const httplib::Request & req, httplib::Response & res) {
-                    if (!handle_gzip_header(req, res)) {
-                        return true; // returns error message
-                    }
-                    const llama_ui_asset * a = llama_ui_find_asset(name);
-                    if (!a) { res.status = 404; return false; }
-                    res.set_header("ETag", a->etag);
-                    if (const std::string & inm = req.get_header_value("If-None-Match");
-                        !inm.empty() && (inm == a->etag || inm == std::string("W/") + a->etag)) {
-                        res.status = 304;
-                        return false;
-                    }
-                    if (isolation) {
-                        res.set_header("Cross-Origin-Embedder-Policy", "require-corp");
-                        res.set_header("Cross-Origin-Opener-Policy",   "same-origin");
-                    }
-                    res.set_header("Cache-Control", cache_control);
-                    res.set_content(reinterpret_cast<const char*>(a->data), a->size, a->type.c_str());
-                    return false;
-                };
-            };
-
-            auto serve_asset_nocache = [](const std::string & name) {
-                return [name](const httplib::Request & req, httplib::Response & res) {
-                    if (!handle_gzip_header(req, res)) {
-                        return true; // returns error message
-                    }
-                    const llama_ui_asset * a = llama_ui_find_asset(name);
-                    if (!a) {
-                        res.status = 404;
-                        return false;
-                    }
-                    res.set_header("Cache-Control", "no-cache");
-                    res.set_content(reinterpret_cast<const char*>(a->data), a->size, a->type.c_str());
-                    return false;
-                };
-            };
-
-            // main index file -- revalidated, so a new build is picked up on the next load
-            srv->Get(params.api_prefix + "/",           serve_asset_cached("index.html", true, cache_revalidate));
-            srv->Get(params.api_prefix + "/index.html", serve_asset_cached("index.html", true, cache_revalidate));
-
-            // All remaining assets registered directly from the embedded asset table.
-            // PWA revalidation files (sw.js, manifest, version.json) use no-cache;
-            // everything else is immutable.
-            static const std::unordered_set<std::string> no_cache_names = {
-                "sw.js",
-                "manifest.webmanifest",
-                "_app/version.json",
-                "build.json"
-            };
-
-            for (const auto & a : llama_ui_get_assets()) {
-                if (a.name == "index.html") continue;  // served at "/" and "/index.html" above
-                if (no_cache_names.count(a.name)) {
-                    SRV_DBG("serve nocache for %s\n", a.name.c_str());
-                    srv->Get(params.api_prefix + "/" + a.name, serve_asset_nocache(a.name));
-                } else {
-                    srv->Get(params.api_prefix + "/" + a.name, serve_asset_cached(a.name, false, cache_immutable));
-                }
-            }
-
-#endif
-        }
-    }
+    
+    SRV_INF("%s", "llama.cpp operating in server-only mode!\n");
+    SRV_INF("%s", "Other modes have been removed for enterprise class operations!\n");
+    
     return true;
 }
 
@@ -660,179 +502,5 @@ void server_http_context::del(const std::string & path, const server_http_contex
         });
         server_http_res_ptr response = handler(*request);
         process_handler_response(std::move(request), response, res);
-    });
-}
-
-//
-// Vertex AI Prediction protocol (AIP_PREDICT_ROUTE)
-// https://cloud.google.com/vertex-ai/docs/predictions/custom-container-requirements
-//
-
-// Derives the camelCase @requestFormat alias for a registered path.
-// e.g. "/v1/chat/completions" -> "chatCompletions", "/apply-template" -> "applyTemplate"
-static std::string path_to_gcp_format(const std::string & path) {
-    std::string s = path;
-    if (s.size() > 3 && s[0] == '/' && s[1] == 'v' && s[2] == '1') {
-        s = s.substr(3);
-    }
-    if (!s.empty() && s[0] == '/') {
-        s = s.substr(1);
-    }
-    std::string result;
-    bool cap = false;
-    for (unsigned char c : s) {
-        if (c == ':') break; // stop before path parameters
-        if (c == '/' || c == '-' || c == '_') {
-            cap = true;
-        } else {
-            result += static_cast<char>(cap ? std::toupper(c) : c);
-            cap = false;
-        }
-    }
-    return result;
-}
-
-static json parse_gcp_predict_response(const server_http_res_ptr & res) {
-    if (res == nullptr) {
-        throw std::runtime_error("empty response from internal handler");
-    }
-    if (res->is_stream()) {
-        throw std::invalid_argument("predict route does not support streaming responses");
-    }
-    if (res->data.empty()) {
-        return nullptr;
-    }
-    try {
-        return json::parse(res->data);
-    } catch (...) {
-        return res->data;
-    }
-}
-
-void server_http_context::register_gcp_compat() const {
-    const gcp_params gcp;
-
-    if (!gcp.enabled) {
-        // do nothing
-        return;
-    }
-
-    if (handlers.count(gcp.path_predict)) {
-        SRV_ERR("AIP_PREDICT_ROUTE=%s conflicts with an existing llama-server route\n", gcp.path_predict.c_str());
-        exit(1);
-    }
-
-    // camelCase alias -> canonical path (first registration wins on collision)
-    // e.g. "chatCompletions" -> "/v1/chat/completions"
-    std::unordered_map<std::string, std::string> alias_to_path;
-    for (const auto & [path, _] : handlers) {
-        alias_to_path.emplace(path_to_gcp_format(path), path);
-    }
-
-    if (!gcp.path_health.empty()) {
-        const auto health_handler = handlers.find("/health");
-        GGML_ASSERT(health_handler != handlers.end());
-        get(gcp.path_health, health_handler->second);
-    }
-
-    post(gcp.path_predict, [this, alias_to_path = std::move(alias_to_path)](const server_http_req & req) -> server_http_res_ptr {
-        static const auto build_error = [](const std::string & message, error_type type) -> json {
-            return json {{"error", format_error_response(message, type)}};
-        };
-
-        json data;
-        try {
-            data = json::parse(req.body);
-        } catch (const std::exception & e) {
-            auto res = std::make_unique<server_http_res>();
-            res->status = 400;
-            res->data = safe_json_to_str({{"error", format_error_response(e.what(), ERROR_TYPE_INVALID_REQUEST)}});
-            return res;
-        }
-        if (!data.is_object()) {
-            auto res = std::make_unique<server_http_res>();
-            res->status = 400;
-            res->data = safe_json_to_str({{"error", format_error_response("request body must be a JSON object", ERROR_TYPE_INVALID_REQUEST)}});
-            return res;
-        }
-        if (!data.contains("instances") || !data.at("instances").is_array()) {
-            auto res = std::make_unique<server_http_res>();
-            res->status = 400;
-            res->data = safe_json_to_str({{"error", format_error_response("request body must include an array field named instances", ERROR_TYPE_INVALID_REQUEST)}});
-            return res;
-        }
-
-        const json & instances = data.at("instances");
-        static const size_t MAX_INSTANCES = 128;
-        if (instances.size() > MAX_INSTANCES) {
-            auto res = std::make_unique<server_http_res>();
-            res->status = 400;
-            res->data = safe_json_to_str({{"error", format_error_response("instances array exceeds maximum size of " + std::to_string(MAX_INSTANCES), ERROR_TYPE_INVALID_REQUEST)}});
-            return res;
-        }
-
-        std::vector<std::future<json>> futures;
-        futures.reserve(instances.size());
-
-        for (const auto & instance : instances) {
-            futures.push_back(std::async(std::launch::async, [this, &req, &alias_to_path, instance]() -> json {
-                if (!instance.is_object()) {
-                    return build_error("each instance must be a JSON object", ERROR_TYPE_INVALID_REQUEST);
-                }
-                if (!instance.contains("@requestFormat") || !instance.at("@requestFormat").is_string()) {
-                    return build_error("each instance must include a string @requestFormat", ERROR_TYPE_INVALID_REQUEST);
-                }
-
-                try {
-                    json payload = instance;
-                    const std::string format = payload.at("@requestFormat").get<std::string>();
-                    payload.erase("@requestFormat");
-
-                    if (payload.contains("stream")) {
-                        SRV_WRN("%s", "ignoring client-provided stream field in instance, streaming is not supported in predict route\n");
-                        payload["stream"] = false;
-                    }
-
-                    // accept both camelCase aliases (e.g. "chatCompletions") and direct paths
-                    std::string dispatch_path;
-                    auto it_alias = alias_to_path.find(format);
-                    if (it_alias != alias_to_path.end()) {
-                        dispatch_path = it_alias->second;
-                    } else if (handlers.count(format)) {
-                        dispatch_path = format;
-                    } else {
-                        return build_error("no handler registered for @requestFormat: " + format, ERROR_TYPE_INVALID_REQUEST);
-                    }
-
-                    const server_http_req internal_req {
-                        req.params,
-                        req.headers,
-                        path_prefix + dispatch_path,
-                        req.query_string,
-                        payload.dump(),
-                        {},
-                        req.should_stop,
-                    };
-
-                    server_http_res_ptr internal_res = handlers.at(dispatch_path)(internal_req);
-                    return parse_gcp_predict_response(internal_res);
-                } catch (const std::invalid_argument & e) {
-                    return build_error(e.what(), ERROR_TYPE_INVALID_REQUEST);
-                } catch (const std::exception & e) {
-                    return build_error(e.what(), ERROR_TYPE_SERVER);
-                } catch (...) {
-                    return build_error("unknown error", ERROR_TYPE_SERVER);
-                }
-            }));
-        }
-
-        json predictions = json::array();
-        for (auto & future : futures) {
-            predictions.push_back(future.get());
-        }
-
-        auto res = std::make_unique<server_http_res>();
-        res->data = safe_json_to_str({{"predictions", predictions}});
-        return res;
     });
 }

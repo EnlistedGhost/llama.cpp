@@ -45,7 +45,7 @@ if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 
     include(git-vars)
 else()
-    set(LLAMA_STANDALONE OFF)
+    set(LLAMA_STANDALONE ON)
 endif()
 
 option(LLAMA_USE_SYSTEM_GGML "Use system libggml" OFF)
@@ -53,7 +53,7 @@ option(LLAMA_USE_SYSTEM_GGML "Use system libggml" OFF)
 option(LLAMA_WASM_MEM64 "llama: use 64-bit memory in WASM builds" ON)
 
 if (EMSCRIPTEN)
-    set(BUILD_SHARED_LIBS_DEFAULT OFF)
+    set(BUILD_SHARED_LIBS_DEFAULT ON)
 
     # Use 64-bit memory to support backend_get_memory queries
     # TODO: analyze performance impact, see https://spidermonkey.dev/blog/2025/01/15/is-memory64-actually-worth-using
@@ -76,7 +76,7 @@ else()
     endif()
 endif()
 
-option(BUILD_SHARED_LIBS "build shared libraries" ${BUILD_SHARED_LIBS_DEFAULT})
+option(BUILD_SHARED_LIBS "build shared libraries" ON)
 
 if (WIN32)
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
@@ -89,17 +89,12 @@ if (MSVC)
     add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:/bigobj>")
 endif()
 
-if (LLAMA_STANDALONE)
-    # enable parallel builds for msbuild
-    list(APPEND CMAKE_VS_GLOBALS UseMultiToolTask=true)
-    list(APPEND CMAKE_VS_GLOBALS EnforceProcessCountAcrossBuilds=true)
-endif()
 
-if (CMAKE_SYSTEM_NAME STREQUAL "iOS")
-    set(LLAMA_TOOLS_INSTALL_DEFAULT OFF)
-else()
-    set(LLAMA_TOOLS_INSTALL_DEFAULT ${LLAMA_STANDALONE})
-endif()
+# enable parallel builds for msbuild
+list(APPEND CMAKE_VS_GLOBALS UseMultiToolTask=true)
+list(APPEND CMAKE_VS_GLOBALS EnforceProcessCountAcrossBuilds=true)
+
+set(LLAMA_TOOLS_INSTALL_DEFAULT ON)
 
 # subprocess spawning isn't a supported/sandbox-friendly operation on mobile OSes or in WASM
 if (CMAKE_SYSTEM_NAME STREQUAL "iOS" OR CMAKE_SYSTEM_NAME STREQUAL "Android" OR ANDROID
@@ -126,23 +121,23 @@ option(LLAMA_SANITIZE_ADDRESS   "llama: enable address sanitizer"   OFF)
 option(LLAMA_SANITIZE_UNDEFINED "llama: enable undefined sanitizer" OFF)
 
 # utils
-option(LLAMA_BUILD_COMMON "llama: build common utils library" ${LLAMA_STANDALONE})
+option(LLAMA_BUILD_COMMON "llama: build common utils library" ON)
 
 # extra artifacts
-option(LLAMA_BUILD_TESTS     "llama: build tests"                                                                ${LLAMA_STANDALONE})
-option(LLAMA_BUILD_TOOLS     "llama: build tools"                                                                ${LLAMA_STANDALONE})
-option(LLAMA_BUILD_EXAMPLES  "llama: build examples"                                                             ${LLAMA_STANDALONE})
-option(LLAMA_BUILD_SERVER    "llama: build server example"                                                       ${LLAMA_STANDALONE})
-option(LLAMA_BUILD_APP       "llama: build the unified binary"                                                   ${LLAMA_STANDALONE})
-option(LLAMA_BUILD_UI        "llama: build the embedded Web UI for server"                                       OFF)
-option(LLAMA_USE_PREBUILT_UI "llama: use prebuilt UI from HF Bucket when available" ON)
+option(LLAMA_BUILD_TESTS     "llama: build tests"               OFF)
+option(LLAMA_BUILD_TOOLS     "llama: build tools"               ON)
+option(LLAMA_BUILD_EXAMPLES  "llama: build examples"            OFF)
+option(LLAMA_BUILD_SERVER    "llama: build server example"      ON)
+option(LLAMA_BUILD_APP       "llama: build the unified binary"  OFF)
+option(LLAMA_BUILD_UI        "llama: build the Web UI"          OFF)
+option(LLAMA_USE_PREBUILT_UI "llama: use prebuilt UI"           OFF)
 
-option(LLAMA_TOOLS_INSTALL "llama: install tools" ${LLAMA_TOOLS_INSTALL_DEFAULT})
-option(LLAMA_TESTS_INSTALL "llama: install tests" ON)
+option(LLAMA_TOOLS_INSTALL "llama: install tools" OFF)
+option(LLAMA_TESTS_INSTALL "llama: install tests" OFF)
 
 # 3rd party libs
 option(LLAMA_OPENSSL    "llama: use openssl to support HTTPS" ON)
-option(LLAMA_SUBPROCESS "llama-common: use subprocess, required by server tools and server router mode" ${LLAMA_SUBPROCESS_DEFAULT})
+option(LLAMA_SUBPROCESS "llama-common: use subprocess, required by server tools and server router mode" ON)
 option(LLAMA_LLGUIDANCE "llama-common: include LLGuidance library for structured output in common utils" OFF)
 
 
@@ -151,24 +146,17 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/build-info.cmake)
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/common.cmake)
 
 if (NOT DEFINED LLAMA_BUILD_NUMBER)
-    set(LLAMA_BUILD_NUMBER        ${BUILD_NUMBER})
+    set(LLAMA_BUILD_NUMBER        "10889")
 endif()
 if (NOT DEFINED LLAMA_BUILD_COMMIT)
-    set(LLAMA_BUILD_COMMIT        ${BUILD_COMMIT})
+    set(LLAMA_BUILD_COMMIT        "311d4211bf1611ff7ca6b67035a4a07c79766efc")
 endif()
 
 # override ggml options
 set(GGML_ALL_WARNINGS   ${LLAMA_ALL_WARNINGS})
 set(GGML_FATAL_WARNINGS ${LLAMA_FATAL_WARNINGS})
-
-# change the default for these ggml options
-if (NOT DEFINED GGML_LLAMAFILE)
-    set(GGML_LLAMAFILE_DEFAULT ON)
-endif()
-
-if (NOT DEFINED GGML_CUDA_GRAPHS)
-    set(GGML_CUDA_GRAPHS_DEFAULT ON)
-endif()
+set(GGML_LLAMAFILE_DEFAULT ON)
+set(GGML_CUDA_GRAPHS_DEFAULT ON)
 
 # transition helpers
 function (llama_option_depr TYPE OLD)
@@ -198,62 +186,25 @@ include("cmake/license.cmake")
 license_add_file("llama.cpp" "LICENSE")
 
 #
-# 3rd-party
-#
-
-if (LLAMA_USE_SYSTEM_GGML)
-    message(STATUS "Using system-provided libggml, skipping ggml build")
-    find_package(ggml REQUIRED)
-    add_library(ggml ALIAS ggml::ggml)
-endif()
-
-if (NOT TARGET ggml AND NOT LLAMA_USE_SYSTEM_GGML)
-    set(GGML_BUILD_NUMBER ${LLAMA_BUILD_NUMBER})
-    set(GGML_BUILD_COMMIT ${LLAMA_BUILD_COMMIT})
-    add_subdirectory(ggml)
-    # ... otherwise assume ggml is added by a parent CMakeLists.txt
-endif()
-
-#
 # build the library
 #
 
 add_subdirectory(src)
 
 #
-# utils, programs, examples and tests
+# utils, programs
 #
 
 add_subdirectory(vendor)
-
-if (LLAMA_BUILD_COMMON)
-    add_subdirectory(common)
-endif()
-
-if (LLAMA_BUILD_COMMON AND LLAMA_BUILD_TESTS AND NOT CMAKE_JS_VERSION)
-    include(CTest)
-    add_subdirectory(tests)
-endif()
-
-if (LLAMA_BUILD_COMMON AND LLAMA_BUILD_EXAMPLES)
-    add_subdirectory(examples)
-    add_subdirectory(pocs)
-endif()
-
-if (LLAMA_BUILD_COMMON AND LLAMA_BUILD_TOOLS)
-    add_subdirectory(tools)
-endif()
-
-if (LLAMA_BUILD_APP)
-    add_subdirectory(app)
-endif()
+add_subdirectory(common)
+add_subdirectory(tools)
 
 # Standalone libmtmd build without pulling in the rest of the tools/ tree.
 # Useful when packaging just the mtmd library for language bindings (e.g. an
 # Apple XCFramework, or a WASM build). When the full tools build is enabled,
 # mtmd is already built by the tools/ subdirectory above; this hook only fires
 # when LLAMA_BUILD_TOOLS is OFF to avoid double-adding the target.
-option(LLAMA_BUILD_MTMD "llama: build tools/mtmd library standalone" OFF)
+option(LLAMA_BUILD_MTMD "llama: build tools/mtmd library standalone" ON)
 if (LLAMA_BUILD_MTMD AND NOT (LLAMA_BUILD_COMMON AND LLAMA_BUILD_TOOLS))
     add_subdirectory(tools/mtmd)
 endif()
